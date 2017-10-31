@@ -7,8 +7,8 @@ public class LanguageLearner
   //and to write these HashMaps to a text file
   public static void main(String[] args) 
   {
-    HashMap<String, Integer> engCounter = countWords("C:\\Users\\Lea\\Documents\\U0\\COMP 202\\train\\eng\\", 20);
-    HashMap<String, Integer> freCounter = countWords("C:\\Users\\Lea\\Documents\\U0\\COMP 202\\train\\fre\\", 20);
+    HashMap<String, Integer> engCounter = countWords(args[0], 20);
+    HashMap<String, Integer> freCounter = countWords(args[1], 20);
     writeVocabulary(engCounter, "eng_vocab.txt");
     writeVocabulary(freCounter, "fre_vocab.txt");
   }

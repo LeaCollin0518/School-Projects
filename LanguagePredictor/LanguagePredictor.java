@@ -9,7 +9,7 @@ public class LanguagePredictor
   {
     HashMap<String, Integer> engVocab = readVocabulary("eng_vocab.txt");
     HashMap<String, Integer> freVocab = readVocabulary("fre_vocab.txt");
-    classifyDocuments(engVocab, freVocab, "C:\\Users\\Lea\\Documents\\U0\\COMP 202\\test\\", 20);
+    classifyDocuments(engVocab, freVocab, args[0], 20);
   }
   
   //this method reads the text file and inputs everything into a HashMap
