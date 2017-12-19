@@ -1,0 +1,1597 @@
+---
+title: "MATH 545 - Final Project"
+author: "Lea Collin, 260618407"
+date: "December 20, 2017"
+output: pdf_document
+---
+
+```{r, include = FALSE}
+library(ggplot2)
+library(reshape2)
+library(tseries)
+library(forecast)
+setwd("~/Dropbox/U4/MATH545")
+
+USCoal<-read.csv('USCoal-2016.csv',header=TRUE)
+Y.ca<-ts(USCoal[,3],start=c(2001,1),frequency=12)
+Y.fl<-ts(USCoal[,4],start=c(2001,1),frequency=12)
+Y.il<-ts(USCoal[,5],start=c(2001,1),frequency=12)
+Y.nc<-ts(USCoal[,6],start=c(2001,1),frequency=12)
+Y.pa<-ts(USCoal[,7],start=c(2001,1),frequency=12)
+```
+
+```{r, eval=FALSE, include=FALSE}
+par(mar = c(4,4,0,0))
+plot(Y.ca, col = "red", ylim = range(min(c(Y.ca, Y.fl, Y.il, Y.nc, Y.pa)), max(c(Y.ca, Y.fl, Y.il, Y.nc, Y.pa))), xlab =  "Time", ylab = "Coal Usage by State")
+lines(Y.ca, col = "red");points(Y.ca, col = "red", cex = 0.6, pch = 19)
+lines(Y.fl, col = "blue");points(Y.fl, col = "blue", cex = 0.6, pch = 19)
+lines(Y.il, col = "green");points(Y.il, col = "green", cex = 0.6, pch = 19)
+lines(Y.nc, col = "coral4");points(Y.nc, col = "coral4", cex = 0.6, pch = 19)
+lines(Y.pa, col = "gray24");points(Y.pa, col = "gray24", cex = 0.6, pch = 19)
+legend(2001, 1.5*10^6, c("CA", "FL", "IL", "NC", "PA"), pch =  19, lty = 1, col = c("red", "blue", "green", "coral4", "gray24"))
+```
+
+We begin our analysis with California (included in the appendix) and start by plotting the data. There is quite an interesting change in the mean for California; it's kind of flat at first, then drops off quite significantly, and then almost seems to flat line by the beginning of 2015. This mean is obviously not constant and we will actually try to fit a sigmoidal function to imitate this changing mean. The detrended data is plotted below.
+
+```{r, include = FALSE}
+par(mar = c(4,4,1,2))
+plot(Y.ca, ylab = "California Coal Usage", xlab = "Time"); lines(Y.ca); points(Y.ca, pch = 19, cex = 0.6); abline(h = mean(Y.ca), lty = 2)
+```
+
+
+```{r, echo = FALSE}
+n <- length(Y.ca)
+tvec <- c(1:n)
+fit1 <- nls(Y.ca ~ SSlogis(tvec, Asym, xmid, scal))
+coef.sig <- coef(summary(fit1))[,1]
+mt<-coef.sig[1]/(1+exp((coef.sig[2]-tvec)/coef.sig[3]))
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+
+Yt <- Y.ca - mt
+
+plot(Yt, ylab = "California Coal Usage", xlab = "Time", main = "California Detrended")
+lines(Yt); points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+This data is still not perfectly zero mean nor does it have an obviously constant variance, but it's not bad. 
+
+```{r, echo = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+This acf actually seems fairly stationary. There is a somewhat large spike around lag 12 which we may handle by fitting a SARIMA model and setting Q equal to 1. Now we will look at the pacf.
+
+```{r, echo  = FALSE}
+pacf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+According to the pacf, P is probably 0 or 1 and the p values are quite small. We will now fit several SARIMA models with d = 0, D = 0, P = 0 or 1, Q = 1 and period 12 and then further inspect the mean squared error of a few models based on their AIC and BIC values. This code is provided in the appendix.
+
+```{r, include = FALSE, cache = TRUE}
+#CALIFORNIA
+Q <- 1; D <- 0; d <- 0
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,4,4)
+for(p in 0:3){
+  for(q in 0:3){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:3),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:3),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:3),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:3),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+#CALIFORNIA
+Q <- 0; D <- 0; d <- 0
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,4,4)
+for(p in 0:3){
+  for(q in 0:3){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:3),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:3),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:3),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:3),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+Because we tried out several combinations of P and Q values, we have several models to look at in more detail. The models for which we calculate the mean squared error are the following: $SARIMA(3,0,2) X (0,0,1)_{12}$, $SARIMA(1,0,0) X (0,0,1)_{12}$, $SARIMA(3,0,2) X (1,0,1)_{12}$, and $SARIMA(1,0,0) X (1,0,1)_{12}$. This code is provided in the appendix.
+
+```{r, include = FALSE}
+#CALIFORNIA
+fit1 <- arima(Yt, order = c(3,0,2), seasonal = list(order=c(0,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.ca)^2)
+
+fit2 <- arima(Yt, order = c(1,0,0), seasonal = list(order=c(0,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.ca)^2)
+
+fit3 <- arima(Yt, order = c(1,0,0), seasonal = list(order=c(1,0,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.ca)^2)
+
+fit4 <- arima(Yt, order = c(3,0,2), seasonal = list(order=c(1,0,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.ca)^2)
+
+fit5 <- arima(Yt, order = c(3,0,2), seasonal = list(order=c(1,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit5.resids <- residuals(fit5)
+fit5.fitted <- Yt - fit5.resids
+fit5.fitted <- fit5.fitted + mt
+
+sum((fit5.fitted - Y.ca)^2)
+
+fit6 <- arima(Yt, order = c(1,0,0), seasonal = list(order=c(1,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit6.resids <- residuals(fit6)
+fit6.fitted <- Yt - fit6.resids
+fit6.fitted <- fit6.fitted + mt
+
+sum((fit6.fitted - Y.ca)^2)
+```
+
+Based on the mean squared error and AIC/BIC values, the best model we can fit to this data is a $SARIMA(3,0,2) X (1,0,1)_{12}$ model. A plot of this fitted model and the original data is shown below. 
+
+```{r, echo = FALSE}
+fit <- arima(Yt, order = c(3,0,2), seasonal = list(order=c(1,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit.resids <- residuals(fit)
+fit.fitted <- Yt - fit.resids
+fit.fitted <- fit.fitted + mt
+par(mar = c(4,4,0,1))
+plot(Y.ca,type='l', xlab = "Time", ylab = " California Coal Usage");
+lines(Y.ca,pch=19,cex=0.5)
+points(fit.fitted, pch = 19, cex = 0.4, col = 'red');lines(fit.fitted,col='red')
+legend(2013, 90000, c("California", "Fitted"), col = c("black", "red"), pch = 19, lty = 1)
+```
+
+Though the fitted model does not do a perfect job of fitting the data, it does do a decent job of catching the rise and fall of the data for each month and over the years. The fitted values also seem to fluctuate around a constant value after 2015. 
+
+```{r, echo = FALSE}
+pred1<- predict(fit1, n.ahead = 12)$pred
+t <- c(193:204)
+mt<-coef.sig[1]/(1+exp((coef.sig[2]-t)/coef.sig[3]))
+pred1 <- pred1 + mt
+pred1
+```
+
+Above are the predictions for California's coal usage in 2017. They seem to be relatively constant, with a slight decreasing trend. The predictions are 1000 to 2000 tons less than the coal usage in 2016 which may not be perfectly reasonable as after 2015, California's coal usage seemed to fluctuate between 5000 and 6000 tons. A probable explanation for why California's coal usage dropped so drastically at the start of 2015 is that new legislation was passed that set limits on the amount of coal to be used.\newline \newline
+
+Let's take a look at Florida now. From plots of just the original data (included in the appendix), we see that there is a more straightforward, linear downward trend in the mean than in the California coal usage data. Because there seems to be a fairly deterministic, decreasing trend in the mean, we can fit a linear regression model and subtract this mean from the data. The detrended data are plotted below. 
+
+```{r, echo = FALSE}
+n <- length(Y.fl)
+tvec <- c(1:n)
+Y.fl.fit <- lm(Y.fl~tvec)
+mt <- Y.fl.fit$coef[1] + Y.fl.fit$coef[2]*tvec
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+
+Yt <- Y.fl - mt
+
+par(mar= c(4,4,2,1))
+plot(Yt, ylab = "Florida Coal Usage", xlab = "Time", main = "Florida Detrended"); lines(Yt); 
+points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+These data seem to be zero mean and we now look at the acf.
+
+```{r, echo = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+From this acf, we see that there is some seasonal behaviour with seasonality of 12 months. We can take care of this seasonality with seasonal differencing at lag 12 and once again we inspect the acf.
+
+```{r, echo = FALSE}
+Y <- diff(Yt, 12)
+acf(Y, lag.max = 50, ylim = range(-1,1), main = "")
+```
+
+Though we have gotten rid of the seasonal behaviour in this data, the acf still shows signs of a non-stationary
+process. We difference again, this time simply at lag 1, to attempt to remove this non-stationary behaviour, and again insepct the acf and also the pacf. 
+
+```{r, echo = FALSE}
+Y <- diff(Y)
+acf(Y, lag.max = 50, ylim = range(-1,1), main = "")
+pacf(Y, lag.max = 50, ylim = range(-1,1), main = "")
+```
+
+This acf now seems to belong to a stationary process. Upon close inspection, the spike at lag 12 suggests that Q is 0 or 1 and according to the pacf, P is probably also either 0 or 1. q seems to be quite small, probably just 1 whereas we might have to try several different p values. We will fit several seasonal arima models and then compare a few based on the AIC and BIC values. Because we are not too sure if Q is 0 or 1 or P is 0 or 1, we will fit models for all and compare the mean squared error of the different fits to help us decide, similar to what we did for California. 
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 1; D <- 1; d <- 1
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,3)
+for(p in 0:5){
+  for(q in 0:2){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:2),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:2),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 0; D <- 1; d <- 1
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,3)
+for(p in 0:5){
+  for(q in 0:2){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:2),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:2),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 1; D <- 1; d <- 1
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,3)
+for(p in 0:5){
+  for(q in 0:2){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:2),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:2),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+From this we get minimum AIC and BIC values for a $SARIMA(1,1,1) X (1,1,1)_{12}$, $SARIMA(2,1,1) X (1,1,1)_{12}$, and $SARIMA(1,1,1) X (1,1,0)_{12}$ models. We can fit these models to the detrended data, retrieve the fitted values and add back the linearly decreasing mean that we fit during pre-processing. We then compute the mean-squared error for each of these models to compare fit. 
+
+```{r, include = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.fl)^2)
+
+fit2 <- arima(Yt, order = c(2,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.fl)^2)
+
+fit3 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.fl)^2)
+
+fit4 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.fl)^2)
+```
+
+We achieve the lowest mean-squared error and AIC/BIC values with the $SARIMA(1,1,1) X (0,1,1)_{12}$ model. We plot this model's fitted values along with the original data below. 
+
+```{r, echo = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+par(mar=c(4,4,1,0));plot(Y.fl,type='l', main = "Florida vs. Fitted", xlab = "Time", ylab = "Coal Usage");
+lines(Y.fl,pch=19,cex=0.5)
+points(fit1.fitted, pch = 19, cex = 0.4, col = 'red');lines(fit1.fitted,col='red')
+legend(2001, 1500000, c("Florida", "Fitted"), col = c("black", "red"), pch = 19, lty = 1)
+```
+
+Overall this model fits the data fairly well.
+
+```{r, echo = FALSE}
+pred1<- predict(fit1, n.ahead = 12)$pred
+t <- c(193:204)
+m <- Y.fl.fit$coef[1] + Y.fl.fit$coef[2]*t
+pred1 <- pred1 + m
+pred1
+```
+
+The predictions for 2017 are shown above. These values follow the trend of the rest of the data which showed higher coal usage in the summer months and lower coal usage in the cooler months (possibly due to increased usage of air conditioning during the extremely warm months) while also still incorporating the decreasing trend overall. \newline \newline
+
+```{r, include = FALSE}
+par(mar = c(4,4,1,2))
+plot(Y.il, ylab = "Illinois Coal Usage", xlab = "Time"); lines(Y.il); points(Y.il, pch = 19, cex = 0.6); abline(h = mean(Y.il), lty = 2)
+```
+
+We now look to Illinois. These data (graph included in the appendix) seem to have more of a quadratic looking mean compared to the states we have already looked at, California and Florida. We can do something similar to what we did for Florida which is fit a linear regression model, this time with a squared term to see if we can eliminate this nonconstant mean. After performing this multiple linear regression, we have a process that seems to have a fairly constant, zero mean. The detrended data are plotted below. 
+
+```{r, echo = FALSE}
+n <- length(Y.il)
+tvec <- c(1:n)
+Y.il.fit <- lm(Y.il~tvec+I(tvec^2))
+mt <- Y.il.fit$coef[1] + Y.il.fit$coef[2]*tvec + Y.il.fit$coef[3]*(tvec^2)
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+Yt <- Y.il - mt
+
+plot(Yt, ylab = "Illinois Coal Usage", xlab = "Time", main = "Illinois Detrended"); lines(Yt); points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+We can now take a look at the acf to determine if the process is stationary or if there is any sort of seasonality or possibly a unit root.
+
+```{r, echo = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Similar to what we saw with the Florida data, there seems to be a seasonality component with 12 month periodicity. We can difference at lag 12 and once again plot the acf to see if we have a stationary process. 
+
+```{r, echo = FALSE}
+Y <- diff(Yt, 12)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Again similar to what we saw in Florida, this seasonal differencing still does not fully get us to a process that seems stationary so we once again difference at lag one and plot the acf and pacf. 
+
+```{r, echo = FALSE}
+Y <- diff(Y)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+pacf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Based on the acf, we have once again that Q and P are both either 0 or 1. Similar again to what we did with California and Florida, we can fit several of these SARIMA models, select a few based on the AIC/BIC values and then select a model based on the mean square error. Based on the acf and pacf, both p and q seem relatively small, probably no more than 2 or 3.
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 1; D <- 1; d <- 1
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,2,2)
+for(p in 0:1){
+  for(q in 0:1){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:1),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:1),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:1),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:1),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 0; D <- 1; d <- 1
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 1; D <- 1; d <- 1
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+From the code which is included in the appendix, we get minimum AIC/BIC values for $SARIMA(1,1,1) X (1,1,1)_{12}$, $SARIMA(3,1,1) X (1,1,0)_{12}$, $SARIMA(3,1,1) X (0,1,1)_{12}$, and $SARIMA(1,1,1) X (0,1,1)_{12}$. We will now calculate the mean squared error and select the model with the lowest one.
+
+```{r, include = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.il)^2)
+
+fit2 <- arima(Yt, order = c(3,1,1), seasonal = list(order=c(1,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.il)^2)
+
+fit3 <- arima(Yt, order = c(3,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.il)^2)
+
+fit4 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.il)^2)
+```
+
+The model with the lowest mean square error was $SARIMA(3,1,1) X (0,1,1)_{12}$. We can plot the fitted values against the original data to visually assess fit. 
+
+```{r, echo = FALSE}
+fit <- arima(Yt, order = c(3,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit.resids <- residuals(fit)
+fit.fitted<- Yt - fit.resids
+fit.fitted <- fit.fitted + mt
+par(mar=c(4,4,1,0));plot(Y.il,type='l', main = "Illinois vs. Fitted", xlab = "Time", ylab = "Coal Usage");
+lines(Y.il,pch=19,cex=0.5)
+points(fit.fitted, pch = 19, cex = 0.4, col = 'red');lines(fit.fitted,col='red')
+legend(2002, 3000000, c("Illinois", "Fitted"), col = c("black", "red"), pch = 19, lty = 1)
+```
+
+This model seems to fit the data similarly well to the model that we fit for the Florida data and better than the model we fit for California. 
+
+```{r, echo = FALSE}
+pred1<- predict(fit, n.ahead = 12)$pred
+t <- c(193:204)
+m <- Y.il.fit$coef[1] + Y.il.fit$coef[2]*t + Y.il.fit$coef[3]*(t^2)
+pred1 <- pred1 + m
+pred1
+```
+
+Above are the predictions for Illinois' coal usage for 2017. These predictions also follow the pattern of the previous data for Illinois where coal usage is highest in December, January, July and August (possibly due to increase use of heat in the coldest winter months and use of air conditioning in the hottest summer months) and these predictions follow the steadily decreasing trend in the data. \newline \newline
+We now move on to North Carolina. Based on the plot of the original North Carolina data (included in the appendix), we see a similar pattern to what we just saw for Illinois which is a rising and then once again falling trend in the mean. We handle this in the same way that we handled the trend for Illinois: by fitting a multiple linear regression model with respect to time with a time squared term. The plot of the detrended data is included below. 
+
+```{r, include = FALSE}
+par(mar = c(4,4,1,2))
+plot(Y.nc, ylab = "NC Coal Usage", xlab = "Time"); lines(Y.nc); points(Y.nc, pch = 19, cex = 0.6); abline(h = mean(Y.nc), lty = 2)
+```
+
+```{r, echo = FALSE}
+n <- length(Y.nc)
+tvec <- c(1:n)
+Y.nc.fit <- lm(Y.nc~tvec+I(tvec^2))
+mt <- Y.nc.fit$coef[1] + Y.nc.fit$coef[2]*tvec + Y.nc.fit$coef[3]*(tvec^2)
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+
+Yt <- Y.nc - mt
+
+plot(Yt, ylab = "NC Coal Usage", xlab = "Time", main = "North Carolina Detrended"); lines(Yt); points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+The data now look approximately zero mean, save for maybe a slight increase in variance towards the end of the dataset. We now look at the acf to see if we have a stationary process.
+
+```{r, echo = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Similar to what we have seen in Florida and Illinois already, there is clear seasonality at lags of 12. We again handle this in the same way that we did for Florida and Illinois: differencing at lag 12. 
+
+```{r, echo = FALSE}
+Y <- diff(Yt, 12)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Once again, very similar to what we have seen in Florida and Illinois, there is still some non-stationary behaviour which we will eliminate by differencing at lag one. We do this and then once again inspect the acf and pacf plots. 
+
+```{r, echo = FALSE}
+Y <- diff(Y)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+pacf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Based on these plots, p and q both seem to be relatively small. It may even be that Q and P are both 0 as even the spikes around lag 12 are quite small. We will set P equal to 0 and try out different SARIMA models with Q equal to 0 or 1. We will again compare AIC and BIC values between each of these models, select the few that have the lowest and then actually fit one to the data based on the mean-square error. 
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 1; D <- 1; d <- 1;
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,5,5)
+for(p in 0:4){
+  for(q in 0:4){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:4),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:4),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 0; D <- 1; d <- 1;
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,5,5)
+for(p in 0:4){
+  for(q in 0:4){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:4),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:4),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+Based on lowest AIC and BIC values of the models tested, we have the choice of the following models: $SARIMA(1,1,1) X (0,1,1)_{12}$, $SARIMA(0,0,3) X (0,1,0)_{12}$ and $SARIMA(0,0,1) X (0,1,0)_{12}$. We compare their mean-squared errors now to select one of these three.
+
+```{r, include = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.nc)^2)
+
+fit2 <- arima(Yt, order = c(0,0,3), seasonal = list(order=c(0,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.nc)^2)
+
+fit3 <- arima(Yt, order = c(0,0,1), seasonal = list(order=c(0,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.nc)^2)
+
+fit4 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.nc)^2)
+```
+
+Based on this analysis and the models selected, the best model we have found for this data is a $SARIMA(1,1,1) X (0,1,1)_{12}$. Below is a plot of the fitted values and the original data. 
+
+```{r, echo = FALSE}
+fit <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit.resids <- residuals(fit)
+fit.fitted <- Yt - fit.resids
+fit.fitted <- fit.fitted + mt
+par(mar=c(4,4,1,0));plot(Y.nc,type='l', main = "NC vs. Fitted", xlab = "Time", ylab = "Coal Usage");
+lines(Y.nc,pch=19,cex=0.5)
+points(fit.fitted, pch = 19, cex = 0.4, col = 'red');lines(fit.fitted,col='red')
+legend(2002, 1250000, c("NC", "Fitted"), col = c("black", "red"), pch = 19, lty = 1)
+```
+
+Though this model definitely fits the data better than the model we fit for California, it does not seem to do as good of a job at fitting the data as the models we fit for Florida and Illinois. 
+
+```{r, echo = FALSE}
+pred1<- predict(fit, n.ahead = 12)$pred
+t <- c(193:204)
+m <- Y.nc.fit$coef[1] + Y.nc.fit$coef[2]*t + Y.nc.fit$coef[3]*(t^2)
+pred1 <- pred1 + m
+pred1
+```
+
+Above are the predictions for North Carolina's coal usage for 2017. The North Carolina data had larger fluctuations between months than the data for Florida and Illinois and the predictions for 2017 do a fairly good job of reflecting that. Once again the months that had higher coal usage in the previous years also have higher coal usage in the predictions, and continue to show a steadily decreasing trend. \newline
+
+We end our analysis with Pennsylvania. Again very similar to what we saw for Illinois and North Carolina (graph included in the appendix), there is not a straightforward linear trend in the mean so we will fit a multiple linear regression model with respect to time for the mean which includes a time squared term. Below is a plot of the detrended data.
+
+```{r, echo = FALSE}
+n <- length(Y.pa)
+tvec <- c(1:n)
+Y.pa.fit <- lm(Y.pa~tvec+I(tvec^2))
+mt <- Y.pa.fit$coef[1] + Y.pa.fit$coef[2]*tvec + Y.pa.fit$coef[3]*(tvec^2)
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+
+Yt <- Y.pa - mt
+
+plot(Yt, ylab = "Pennsylvania Coal Usage", xlab = "Time", main = "Pennsylvania Detrended"); lines(Yt); points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+The data appear to have approximately zero mean now. As we have done for all four other states, we now take a look at the acf to see if we have a stationary process but considering that three of the four previous states had a very clear 12 month seasonal period, we can assume that this is probably the pattern we will see for Pennyslvania as well. 
+
+```{r, echo = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+As guessed, there is a seasonality of period 12 in this data. We can also guess that we will likely have to difference the data at lag 1 to get an acf that resembles that of a stationary process. 
+
+```{r, echo = FALSE}
+Y <- diff(Yt, 12)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Based on this acf, it does seem like we need to difference once at lag 1. We look at the acf and pacf of this differenced data below. 
+
+```{r, echo = FALSE}
+Y <- diff(Y)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+pacf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Very similar to what we saw for North Carolina, p and q seem quite small and we can once again probably say that P and Q are probably equal to 0 or 1 so we will try to fit different SARIMA models with these four different combinations of P and Q values, consider a few based on their AIC and BIC values and then fit and plot one based on the lowest mean squared error. 
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 1; D <- 1; d <- 0;
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 6), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 0; D <- 1; d <- 1;
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 1; D <- 1; d <- 1;
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,2,6)
+for(p in 0:1){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:1),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:1),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 1; D <- 1; d <- 1;
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, include = FALSE, cache = TRUE}
+Q <- 0; D <- 1; d <- 1;
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,5,5)
+for(p in 0:4){
+  for(q in 0:4){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:4),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:4),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+Because we tried out four different combinations of P and Q values, we have several models that achieved low AIC and BIC values. We will now calculate the mean squared error for the following models: $SARIMA(1,1,1) X (0,1,1)_{12}$, $SARIMA(1,1,1) X (0,1,0)_{12}$, $SARIMA(3,1,3) X (0,1,0)_{12}$, $SARIMA(1,1,1) X (1,1,1)_{12}$, $SARIMA(3,1,4) X (0,1,1)_{12}$ and $SARIMA(1,1,1) X (1,1,0)_{12}$. 
+
+```{r, include = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.pa)^2)
+
+fit2 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.pa)^2)
+
+fit3 <- arima(Yt, order = c(3,1,3), seasonal = list(order=c(0,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.pa)^2)
+
+fit4 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.pa)^2)
+
+fit5 <- arima(Yt, order = c(3,1,4), seasonal = list(order=c(1,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit5.resids <- residuals(fit5)
+fit5.fitted <- Yt - fit5.resids
+fit5.fitted <- fit5.fitted + mt
+
+sum((fit5.fitted - Y.pa)^2)
+
+fit6 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit6.resids <- residuals(fit6)
+fit6.fitted <- Yt - fit6.resids
+fit6.fitted <- fit6.fitted + mt
+
+sum((fit6.fitted - Y.pa)^2)
+```
+
+With the combination of low AIC/BIC values and low mean squared error compared to the other models tested, we will fit a $SARIMA(1,1,1) X (1,1,1)_{12}$. A plot of the fitted values along with the original data is included below. 
+
+```{r, echo = FALSE}
+fit <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit.resids <- residuals(fit)
+fit.fitted <- Yt - fit.resids
+fit.fitted <- fit.fitted + mt
+par(mar=c(4,4,1,0));plot(Y.pa,type='l', main = "PA vs. Fitted", xlab = "Time", ylab = "Coal Usage");
+lines(Y.pa,pch=19,cex=0.5)
+points(fit.fitted, pch = 19, cex = 0.6, col = 'red');lines(fit.fitted,col='red')
+```
+
+This model seems similar in quality of fit to the models fitted for Florida and Illinois. 
+
+```{r, echo = FALSE}
+pred1<- predict(fit, n.ahead = 12)$pred
+t <- c(193:204)
+m <- Y.pa.fit$coef[1] + Y.pa.fit$coef[2]*t + Y.pa.fit$coef[3]*(t^2)
+pred1 <- pred1 + m
+pred1
+```
+
+Above are the predictions for Pennsylvania's coal usage in 2017. Similar to the other states, these predictions stay true to the rest of the trends in the state's previous data, where there is higher usage in January, July and August and also shows a steadily decreasing trend. 
+
+With the exception of California, all the states needed seasonal differencing and lag one differencing to get a stationary process. However, all states were fit with a seasonal ARIMA model rather than a simpler ARMA model. Also save for California, the states required preprocessing in the form of either simple or multiple linear regression. California was the one state that did not exhibit clear seasonal behaviour and whose mean did not really have a clear underlying function that could be modeled using linear regression, hence the use of a sigmoidal function. Because California had quite some jumps in the data, especially the drop in coal usage at the beginning of 2015, it was especially difficult to find a model for this data that could be rationalized and that didn't overfit the data either. Each state did show an overall decrease in coal usage since 2001, most likely due to stricter regulations and a move towards more renewable energy sources.
+
+\newpage
+
+#APPENDIX
+```{r, eval = FALSE}
+library(ggplot2)
+library(reshape2)
+library(tseries)
+library(forecast)
+setwd("~/Dropbox/U4/MATH545")
+
+USCoal<-read.csv('USCoal-2016.csv',header=TRUE)
+Y.ca<-ts(USCoal[,3],start=c(2001,1),frequency=12)
+Y.fl<-ts(USCoal[,4],start=c(2001,1),frequency=12)
+Y.il<-ts(USCoal[,5],start=c(2001,1),frequency=12)
+Y.nc<-ts(USCoal[,6],start=c(2001,1),frequency=12)
+Y.pa<-ts(USCoal[,7],start=c(2001,1),frequency=12)
+```
+
+#####California Analysis
+```{r}
+par(mar = c(4,4,1,2))
+plot(Y.ca, ylab = "California Coal Usage", xlab = "Time", main = "Original CA Data"); lines(Y.ca); points(Y.ca, pch = 19, cex = 0.6); abline(h = mean(Y.ca), lty = 2)
+```
+
+```{r, eval = FALSE}
+n <- length(Y.ca)
+tvec <- c(1:n)
+fit1 <- nls(Y.ca ~ SSlogis(tvec, Asym, xmid, scal))
+coef.sig <- coef(summary(fit1))[,1]
+mt<-coef.sig[1]/(1+exp((coef.sig[2]-tvec)/coef.sig[3]))
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+
+Yt <- Y.ca - mt
+
+plot(Yt, ylab = "California Coal Usage", xlab = "Time", main = "California Detrended")
+lines(Yt); points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+```{r, eval = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, eval  = FALSE}
+pacf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 0; d <- 0
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,4,4)
+for(p in 0:3){
+  for(q in 0:3){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:3),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:3),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:3),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:3),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 0; D <- 0; d <- 0
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,4,4)
+for(p in 0:3){
+  for(q in 0:3){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:3),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:3),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:3),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:3),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r}
+fit1 <- arima(Yt, order = c(3,0,2), seasonal = list(order=c(0,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.ca)^2)
+
+fit2 <- arima(Yt, order = c(1,0,0), seasonal = list(order=c(0,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.ca)^2)
+
+fit3 <- arima(Yt, order = c(1,0,0), seasonal = list(order=c(1,0,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.ca)^2)
+
+fit4 <- arima(Yt, order = c(3,0,2), seasonal = list(order=c(1,0,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.ca)^2)
+
+fit5 <- arima(Yt, order = c(3,0,2), seasonal = list(order=c(1,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit5.resids <- residuals(fit5)
+fit5.fitted <- Yt - fit5.resids
+fit5.fitted <- fit5.fitted + mt
+
+sum((fit5.fitted - Y.ca)^2)
+
+fit6 <- arima(Yt, order = c(1,0,0), seasonal = list(order=c(1,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit6.resids <- residuals(fit6)
+fit6.fitted <- Yt - fit6.resids
+fit6.fitted <- fit6.fitted + mt
+
+sum((fit6.fitted - Y.ca)^2)
+```
+
+```{r, eval = FALSE}
+fit <- arima(Yt, order = c(3,0,2), seasonal = list(order=c(1,0,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit.resids <- residuals(fit)
+fit.fitted <- Yt - fit.resids
+fit.fitted <- fit.fitted + mt
+par(mar = c(4,4,0,1))
+plot(Y.ca,type='l', xlab = "Time", ylab = " California Coal Usage");
+lines(Y.ca,pch=19,cex=0.5)
+points(fit.fitted, pch = 19, cex = 0.4, col = 'red');lines(fit.fitted,col='red')
+legend(2013, 90000, c("California", "Fitted"), col = c("black", "red"), pch = 19, lty = 1)
+```
+
+```{r, eval = FALSE}
+pred1<- predict(fit1, n.ahead = 12)$pred
+t <- c(193:204)
+mt<-coef.sig[1]/(1+exp((coef.sig[2]-t)/coef.sig[3]))
+pred1 <- pred1 + mt
+pred1
+```
+
+#####Florida Analysis
+```{r}
+par(mar = c(4,4,1,2))
+plot(Y.fl, ylab = "Florida Coal Usage", xlab = "Time", main = "Original FL Data"); lines(Y.fl); points(Y.fl, pch = 19, cex = 0.6); abline(h = mean(Y.fl), lty = 2)
+```
+
+```{r, eval = FALSE}
+n <- length(Y.fl)
+tvec <- c(1:n)
+Y.fl.fit <- lm(Y.fl~tvec)
+mt <- Y.fl.fit$coef[1] + Y.fl.fit$coef[2]*tvec
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+
+Yt <- Y.fl - mt
+
+par(mar= c(4,4,2,1))
+plot(Yt, ylab = "Florida Coal Usage", xlab = "Time", main = "Florida Detrended"); lines(Yt); 
+points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+```{r, eval = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, eval = FALSE}
+Y <- diff(Yt, 12)
+acf(Y, lag.max = 50, ylim = range(-1,1), main = "")
+```
+
+```{r, eval = FALSE}
+Y <- diff(Y)
+acf(Y, lag.max = 50, ylim = range(-1,1), main = "")
+pacf(Y, lag.max = 50, ylim = range(-1,1), main = "")
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 1; d <- 1
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,3)
+for(p in 0:5){
+  for(q in 0:2){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:2),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:2),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 0; D <- 1; d <- 1
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,3)
+for(p in 0:5){
+  for(q in 0:2){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:2),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:2),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 1; d <- 1
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,3)
+for(p in 0:5){
+  for(q in 0:2){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:2),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:2),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.fl)^2)
+
+fit2 <- arima(Yt, order = c(2,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.fl)^2)
+
+fit3 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.fl)^2)
+
+fit4 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.fl)^2)
+```
+
+```{r, eval = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+par(mar=c(4,4,1,0));plot(Y.fl,type='l', main = "Florida vs. Fitted", xlab = "Time", ylab = "Coal Usage");
+lines(Y.fl,pch=19,cex=0.5)
+points(fit1.fitted, pch = 19, cex = 0.4, col = 'red');lines(fit1.fitted,col='red')
+legend(2001, 1500000, c("Florida", "Fitted"), col = c("black", "red"), pch = 19, lty = 1)
+```
+
+```{r, eval = FALSE}
+pred1<- predict(fit1, n.ahead = 12)$pred
+t <- c(193:204)
+m <- Y.fl.fit$coef[1] + Y.fl.fit$coef[2]*t
+pred1 <- pred1 + m
+pred1
+```
+
+#####Illinois Analysis
+```{r}
+par(mar = c(4,4,1,2))
+plot(Y.il, ylab = "Illinois Coal Usage", xlab = "Time", main = "Original IL Data"); lines(Y.il); points(Y.il, pch = 19, cex = 0.6); abline(h = mean(Y.il), lty = 2)
+```
+
+```{r, eval = FALSE}
+n <- length(Y.il)
+tvec <- c(1:n)
+Y.il.fit <- lm(Y.il~tvec+I(tvec^2))
+mt <- Y.il.fit$coef[1] + Y.il.fit$coef[2]*tvec + Y.il.fit$coef[3]*(tvec^2)
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+Yt <- Y.il - mt
+
+plot(Yt, ylab = "Illinois Coal Usage", xlab = "Time", main = "Illinois Detrended"); lines(Yt); points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+```{r, eval = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, eval = FALSE}
+Y <- diff(Yt, 12)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+Again similar to what we saw in Florida, this seasonal differencing still does not fully get us to a process that seems stationary so we once again difference at lag one and plot the acf and pacf. 
+
+```{r, eval = FALSE}
+Y <- diff(Y)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+pacf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 1; d <- 1
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,2,2)
+for(p in 0:1){
+  for(q in 0:1){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:1),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:1),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:1),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:1),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 0; D <- 1; d <- 1
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 1; d <- 1
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, eval = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.il)^2)
+
+fit2 <- arima(Yt, order = c(3,1,1), seasonal = list(order=c(1,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.il)^2)
+
+fit3 <- arima(Yt, order = c(3,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.il)^2)
+
+fit4 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.il)^2)
+```
+
+```{r, eval = FALSE}
+fit <- arima(Yt, order = c(3,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit.resids <- residuals(fit)
+fit.fitted<- Yt - fit.resids
+fit.fitted <- fit.fitted + mt
+par(mar=c(4,4,1,0));plot(Y.il,type='l', main = "Illinois vs. Fitted", xlab = "Time", ylab = "Coal Usage");
+lines(Y.il,pch=19,cex=0.5)
+points(fit.fitted, pch = 19, cex = 0.4, col = 'red');lines(fit.fitted,col='red')
+legend(2002, 3000000, c("Illinois", "Fitted"), col = c("black", "red"), pch = 19, lty = 1)
+```
+
+```{r, eval = FALSE}
+pred1<- predict(fit, n.ahead = 12)$pred
+t <- c(193:204)
+m <- Y.il.fit$coef[1] + Y.il.fit$coef[2]*t + Y.il.fit$coef[3]*(t^2)
+pred1 <- pred1 + m
+pred1
+```
+
+#####North Carolina Analysis
+```{r}
+par(mar = c(4,4,1,2))
+plot(Y.nc, ylab = "NC Coal Usage", xlab = "Time", main = "Original NC Data"); lines(Y.nc); points(Y.nc, pch = 19, cex = 0.6); abline(h = mean(Y.nc), lty = 2)
+```
+
+```{r, eval = FALSE}
+n <- length(Y.nc)
+tvec <- c(1:n)
+Y.nc.fit <- lm(Y.nc~tvec+I(tvec^2))
+mt <- Y.nc.fit$coef[1] + Y.nc.fit$coef[2]*tvec + Y.nc.fit$coef[3]*(tvec^2)
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+
+Yt <- Y.nc - mt
+
+plot(Yt, ylab = "NC Coal Usage", xlab = "Time", main = "North Carolina Detrended"); lines(Yt); points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+```{r, eval = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, eval = FALSE}
+Y <- diff(Yt, 12)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, eval = FALSE}
+Y <- diff(Y)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+pacf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 1; d <- 1;
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,5,5)
+for(p in 0:4){
+  for(q in 0:4){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:4),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:4),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 0; D <- 1; d <- 1;
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,5,5)
+for(p in 0:4){
+  for(q in 0:4){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:4),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:4),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, eval = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.nc)^2)
+
+fit2 <- arima(Yt, order = c(0,0,3), seasonal = list(order=c(0,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.nc)^2)
+
+fit3 <- arima(Yt, order = c(0,0,1), seasonal = list(order=c(0,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.nc)^2)
+
+fit4 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.nc)^2)
+```
+
+```{r, eval = FALSE}
+fit <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit.resids <- residuals(fit)
+fit.fitted <- Yt - fit.resids
+fit.fitted <- fit.fitted + mt
+par(mar=c(4,4,1,0));plot(Y.nc,type='l', main = "NC vs. Fitted", xlab = "Time", ylab = "Coal Usage");
+lines(Y.nc,pch=19,cex=0.5)
+points(fit.fitted, pch = 19, cex = 0.4, col = 'red');lines(fit.fitted,col='red')
+legend(2002, 1250000, c("NC", "Fitted"), col = c("black", "red"), pch = 19, lty = 1)
+```
+
+```{r, eval = FALSE}
+pred1<- predict(fit, n.ahead = 12)$pred
+t <- c(193:204)
+m <- Y.nc.fit$coef[1] + Y.nc.fit$coef[2]*t + Y.nc.fit$coef[3]*(t^2)
+pred1 <- pred1 + m
+pred1
+```
+
+######Pennsylvania Analysis
+```{r}
+par(mar = c(4,4,1,2))
+plot(Y.pa, ylab = "PA Coal Usage", xlab = "Time", main = "Original PA Data"); lines(Y.pa); points(Y.pa, pch = 19, cex = 0.6); abline(h = mean(Y.pa), lty = 2)
+```
+
+```{r, eval = FALSE}
+n <- length(Y.pa)
+tvec <- c(1:n)
+Y.pa.fit <- lm(Y.pa~tvec+I(tvec^2))
+mt <- Y.pa.fit$coef[1] + Y.pa.fit$coef[2]*tvec + Y.pa.fit$coef[3]*(tvec^2)
+mt <- ts(mt, start = c(2001,1), frequency = 12)
+
+Yt <- Y.pa - mt
+
+plot(Yt, ylab = "Pennsylvania Coal Usage", xlab = "Time", main = "Pennsylvania Detrended"); lines(Yt); points(Yt, pch = 19, cex = 0.6); abline(h = 0, lty = 2)
+```
+
+```{r, eval = FALSE}
+acf(Yt, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, eval = FALSE}
+Y <- diff(Yt, 12)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, eval = FALSE}
+Y <- diff(Y)
+acf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+pacf(Y, ylim = range(-1,1), lag.max = 50, main = "")
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 1; d <- 0;
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 6), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 0; D <- 1; d <- 1;
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 1; d <- 1;
+P <- 1
+P1AIC.mat <- P1BIC.mat <- matrix(0,2,6)
+for(p in 0:1){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:1),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:1),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 1; D <- 1; d <- 1;
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,6,6)
+for(p in 0:5){
+  for(q in 0:5){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:5),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:5),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:5),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, cache = TRUE}
+Q <- 0; D <- 1; d <- 1;
+P <- 0
+P1AIC.mat <- P1BIC.mat <- matrix(0,5,5)
+for(p in 0:4){
+  for(q in 0:4){
+    fit.pq <- arima(Yt, order = c(p,d,q), seasonal=list(order=c(P,D,Q), period = 12), method = 'ML', optim.control = list(maxit = 1000))
+    P1AIC.mat[1+p, 1+q] <- fit.pq$aic
+    P1BIC.mat[1+p, 1+q] <- BIC(fit.pq)
+  }
+}
+rownames(P1AIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1AIC.mat)<-paste("q=",c(0:4),sep="")
+rownames(P1BIC.mat)<-paste("p=",c(0:4),sep="");colnames(P1BIC.mat)<-paste("q=",c(0:4),sep="")
+
+round(P1AIC.mat-min(P1AIC.mat),4)
+round(P1BIC.mat-min(P1BIC.mat),4)
+```
+
+```{r, eval = FALSE}
+fit1 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit1.resids <- residuals(fit1)
+fit1.fitted <- Yt - fit1.resids
+fit1.fitted <- fit1.fitted + mt
+
+sum((fit1.fitted - Y.pa)^2)
+
+fit2 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(0,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit2.resids <- residuals(fit2)
+fit2.fitted <- Yt - fit2.resids
+fit2.fitted <- fit2.fitted + mt
+
+sum((fit2.fitted - Y.pa)^2)
+
+fit3 <- arima(Yt, order = c(3,1,3), seasonal = list(order=c(0,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit3.resids <- residuals(fit3)
+fit3.fitted <- Yt - fit3.resids
+fit3.fitted <- fit3.fitted + mt
+
+sum((fit3.fitted - Y.pa)^2)
+
+fit4 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit4.resids <- residuals(fit4)
+fit4.fitted <- Yt - fit4.resids
+fit4.fitted <- fit4.fitted + mt
+
+sum((fit4.fitted - Y.pa)^2)
+
+fit5 <- arima(Yt, order = c(3,1,4), seasonal = list(order=c(1,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit5.resids <- residuals(fit5)
+fit5.fitted <- Yt - fit5.resids
+fit5.fitted <- fit5.fitted + mt
+
+sum((fit5.fitted - Y.pa)^2)
+
+fit6 <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,0), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit6.resids <- residuals(fit6)
+fit6.fitted <- Yt - fit6.resids
+fit6.fitted <- fit6.fitted + mt
+
+sum((fit6.fitted - Y.pa)^2)
+```
+
+```{r, eval = FALSE}
+fit <- arima(Yt, order = c(1,1,1), seasonal = list(order=c(1,1,1), period = 12), 
+                include.mean = T, method = 'ML', optim.control = list(maxit = 1000))
+fit.resids <- residuals(fit)
+fit.fitted <- Yt - fit.resids
+fit.fitted <- fit.fitted + mt
+par(mar=c(4,4,1,0));plot(Y.pa,type='l', main = "PA vs. Fitted", xlab = "Time", ylab = "Coal Usage");
+lines(Y.pa,pch=19,cex=0.5)
+points(fit.fitted, pch = 19, cex = 0.6, col = 'red');lines(fit.fitted,col='red')
+```
+
+```{r, eval = FALSE}
+pred1<- predict(fit, n.ahead = 12)$pred
+t <- c(193:204)
+m <- Y.pa.fit$coef[1] + Y.pa.fit$coef[2]*t + Y.pa.fit$coef[3]*(t^2)
+pred1 <- pred1 + m
+pred1
+```
