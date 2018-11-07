@@ -1,3 +1,5 @@
+#!/usr/bin/env python2.7
+
 import networkx as nx
 
 # using shortest-path to find valid s-t path in residual graph
@@ -99,3 +101,28 @@ def FF(g, start, end):
         P = BFS(residual_graph, start, end)
         residual_graph, flow, value = augment(residual_graph, flow, P, value)
     return value, flow
+
+
+# test
+test_G = nx.Graph()
+test_G = nx.DiGraph(test_G)
+
+test_G.add_edge('a', 'b')
+test_G.add_edge('a', 'c')
+test_G.add_edge('b', 'c')
+test_G.add_edge('b', 'd')
+test_G.add_edge('c', 'd')
+
+test_G.node['a']['demand'] = -3
+test_G.node['b']['demand'] = -3
+test_G.node['c']['demand'] = 2
+test_G.node['d']['demand'] = 4
+
+test_G.edge['a']['b']['capacity'] = 3
+test_G.edge['a']['c']['capacity'] = 3
+test_G.edge['b']['c']['capacity'] = 2
+test_G.edge['b']['d']['capacity'] = 2
+test_G.edge['c']['d']['capacity'] = 2
+
+flow = FF(test_G, 'a', 'd')
+print flow
